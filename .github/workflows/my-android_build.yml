@@ -1,11 +1,11 @@
-name: 构建 Android 客户端 (防报错版)
+name: 构建 Android 客户端 (修复密钥路径版)
 
 on:
   workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
-    runs-on: ubuntu-latest # 安卓编译使用 Linux 环境最稳
+    runs-on: ubuntu-latest
     
     steps:
       - name: 检出代码
@@ -15,34 +15,42 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17' # Flutter 3.x 推荐使用 Java 17
+          java-version: '17'
 
       - name: 安装 Flutter 环境
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable' # 使用稳定版
+          channel: 'stable'
 
       - name: 拉取依赖
         working-directory: ./simple_live_app
         run: flutter pub get
 
-      # 【关键步骤】生成临时签名，防止因缺少 key.properties 报错
-      # 很多开源项目缺少这一步会导致普通用户编译失败
-      - name: 生成临时签名密钥
-        working-directory: ./simple_live_app/android
+      # 【修正步骤】精准生成签名文件到 app 目录
+      - name: 生成临时签名配置
         run: |
-          # 1. 生成一个临时的 keystore 文件
-          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias my-key-alias -storepass 123456 -keypass 123456 -dname "CN=Android Debug,O=Android,C=US"
+          # 1. 进入 android/app 目录，在这里直接生成 jks 文件
+          # 这样 Gradle 在 app 模块下就能直接找到它
+          cd simple_live_app/android/app
+          keytool -genkey -v -keystore my-release-key.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias my-key-alias -storepass 123456 -keypass 123456 \
+            -dname "CN=Android Debug,O=Android,C=US"
           
-          # 2. 生成对应的 key.properties 文件让 Gradle 读取
+          # 2. 回退到 android 目录，生成 key.properties
+          cd ..
           echo "storePassword=123456" > key.properties
           echo "keyPassword=123456" >> key.properties
           echo "keyAlias=my-key-alias" >> key.properties
-          echo "storeFile=my-release-key.jks" >> key.properties
+          # 这里非常关键：告诉 Gradle 密钥文件在 app 文件夹里
+          echo "storeFile=app/my-release-key.jks" >> key.properties
+          
+          # 打印一下验证文件是否真的在 (调试用)
+          echo "=== 检查文件位置 ==="
+          ls -R
 
       - name: 编译 APK (Release)
         working-directory: ./simple_live_app
-        # 如果项目强制要求特定签名配置，上面的步骤已经骗过了它
         run: flutter build apk --release
 
       - name: 上传 APK 产物
