@@ -1,0 +1,38 @@
+name: Build Windows Client
+
+on:
+  workflow_dispatch: # 允许手动触发构建
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          # 这里不指定版本，默认使用最新的 stable 版本，通常能兼容
+
+      - name: Install Dependencies
+        working-directory: ./simple_live_app
+        run: |
+          flutter pub get
+
+      - name: Build Windows Release
+        working-directory: ./simple_live_app
+        run: |
+          flutter build windows --release
+
+      - name: Compress Release
+        working-directory: ./simple_live_app/build/windows/x64/runner
+        run: |
+          Compress-Archive -Path Release/* -DestinationPath SimpleLive_Windows.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleLive_Windows_Client
+          path: ./simple_live_app/build/windows/x64/runner/SimpleLive_Windows.zip
