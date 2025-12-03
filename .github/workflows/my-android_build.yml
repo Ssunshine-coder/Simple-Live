@@ -1,59 +1,64 @@
-name: 构建 Android 客户端 (修复密钥路径版)
+name: Build Android Client (Fixed Path)
 
 on:
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch: # Allow manual trigger
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-      - name: 检出代码
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 安装 Java 环境
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: 安装 Flutter 环境
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: 拉取依赖
+      - name: Install Dependencies
         working-directory: ./simple_live_app
         run: flutter pub get
 
-      # 【修正步骤】精准生成签名文件到 app 目录
-      - name: 生成临时签名配置
+      # [CRITICAL STEP] Generate temporary signing key
+      # Fix: The keystore is placed in 'android/app/', so 'key.properties' 
+      # should refer to it simply by filename, not 'app/filename'.
+      - name: Generate Signing Key
         run: |
-          # 1. 进入 android/app 目录，在这里直接生成 jks 文件
-          # 这样 Gradle 在 app 模块下就能直接找到它
+          # 1. Navigate to 'android/app' to generate the keystore file there
           cd simple_live_app/android/app
+          
           keytool -genkey -v -keystore my-release-key.jks \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -alias my-key-alias -storepass 123456 -keypass 123456 \
             -dname "CN=Android Debug,O=Android,C=US"
           
-          # 2. 回退到 android 目录，生成 key.properties
+          # 2. Go back to 'android' directory to create key.properties
           cd ..
+          
+          # 3. Create key.properties
           echo "storePassword=123456" > key.properties
           echo "keyPassword=123456" >> key.properties
           echo "keyAlias=my-key-alias" >> key.properties
-          # 这里非常关键：告诉 Gradle 密钥文件在 app 文件夹里
-          echo "storeFile=app/my-release-key.jks" >> key.properties
+          # FIX: Use just the filename. Gradle interprets this relative to the 'app' module.
+          echo "storeFile=my-release-key.jks" >> key.properties
           
-          # 打印一下验证文件是否真的在 (调试用)
-          echo "=== 检查文件位置 ==="
-          ls -R
+          # Debug: Verify files exist
+          echo "=== Verifying File Locations ==="
+          ls -l key.properties
+          ls -l app/my-release-key.jks
 
-      - name: 编译 APK (Release)
+      - name: Build APK (Release)
         working-directory: ./simple_live_app
         run: flutter build apk --release
 
-      - name: 上传 APK 产物
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: simple_live_android_client
